@@ -31,36 +31,148 @@ The dict returned has keys:
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
+
+from fdtd_presets import (list_presets, save_preset, load_preset,
+                           delete_preset, preset_exists, preset_metadata)
 
 
 # ============================================================
 # Material catalog (mirrors the one in fdtd_main.py for self-containment)
 # ============================================================
 MATERIAL_PRESETS = {
+    # ---- Perfect conductor (baseline) ---
     'pec': {
         'name': 'pec', 'eps_r': 1.0, 'loss': None,
-        'desc': 'Perfect electric conductor - total reflection'
+        'desc': 'Perfect electric conductor — total reflection, no penetration',
+        'category': 'Ideal',
     },
-    'metal': {
-        'name': 'metal', 'eps_r': 1.0, 'loss': 1.5,
-        'desc': 'Lossy conductor (e.g. aluminum)'
+
+    # ---- Metals & conductors ---
+    'silver (Ag)': {
+        'name': 'silver (Ag)', 'eps_r': 1.0, 'loss': 1.8,
+        'desc': 'σ ≈ 6.3×10⁷ S/m — highest conductivity of any element',
+        'category': 'Metal',
     },
+    'copper (Cu)': {
+        'name': 'copper (Cu)', 'eps_r': 1.0, 'loss': 1.7,
+        'desc': 'σ ≈ 5.96×10⁷ S/m — standard PCB trace / waveguide material',
+        'category': 'Metal',
+    },
+    'aluminum (Al)': {
+        'name': 'aluminum (Al)', 'eps_r': 1.0, 'loss': 1.5,
+        'desc': 'σ ≈ 3.77×10⁷ S/m — lightweight RF shielding, enclosures',
+        'category': 'Metal',
+    },
+    'ITO': {
+        'name': 'ITO', 'eps_r': 3.8, 'loss': 0.5,
+        'desc': 'Indium tin oxide — transparent conductor, εᵣ ≈ 3.8, σ ≈ 10⁴ S/m',
+        'category': 'Metal',
+    },
+
+    # ---- Semiconductors ---
+    'a-Si': {
+        'name': 'a-Si', 'eps_r': 11.7, 'loss': 0.15,
+        'desc': 'Amorphous silicon — solar cells, TFTs, εᵣ ≈ 11.7',
+        'category': 'Semiconductor',
+    },
+    'c-Si': {
+        'name': 'c-Si', 'eps_r': 11.7, 'loss': 0.02,
+        'desc': 'Crystalline silicon (intrinsic) — εᵣ ≈ 11.7, very low loss',
+        'category': 'Semiconductor',
+    },
+    'GaAs': {
+        'name': 'GaAs', 'eps_r': 12.9, 'loss': 0.006,
+        'desc': 'Gallium arsenide — MMIC substrates, εᵣ ≈ 12.9, tan δ ≈ 0.0004',
+        'category': 'Semiconductor',
+    },
+
+    # ---- Dielectrics & substrates ---
+    'SiO2': {
+        'name': 'SiO2', 'eps_r': 3.9, 'loss': 0.003,
+        'desc': 'Fused silica / quartz — IC gate oxide, εᵣ ≈ 3.9, tan δ < 0.001',
+        'category': 'Dielectric',
+    },
+    'alumina (Al2O3)': {
+        'name': 'alumina (Al2O3)', 'eps_r': 9.8, 'loss': 0.005,
+        'desc': 'Aluminum oxide ceramic — LTCC, εᵣ ≈ 9.8, tan δ ≈ 0.0001',
+        'category': 'Dielectric',
+    },
+    'FR-4': {
+        'name': 'FR-4', 'eps_r': 4.4, 'loss': 0.04,
+        'desc': 'Standard PCB laminate — εᵣ ≈ 4.4, tan δ ≈ 0.02',
+        'category': 'Dielectric',
+    },
+    'Rogers RT5880': {
+        'name': 'Rogers RT5880', 'eps_r': 2.2, 'loss': 0.002,
+        'desc': 'High-frequency PCB — εᵣ ≈ 2.2, tan δ ≈ 0.0009',
+        'category': 'Dielectric',
+    },
+    'PTFE (Teflon)': {
+        'name': 'PTFE (Teflon)', 'eps_r': 2.1, 'loss': 0.001,
+        'desc': 'Low-k low-loss — coax insulation, εᵣ ≈ 2.1, tan δ ≈ 0.0002',
+        'category': 'Dielectric',
+    },
+    'BaTiO3': {
+        'name': 'BaTiO3', 'eps_r': 150.0, 'loss': 0.08,
+        'desc': 'Barium titanate — high-k ceramic capacitor, εᵣ ≈ 150–1700',
+        'category': 'Dielectric',
+    },
+
+    # ---- Magnetic & specialty ---
+    'ferrite (NiZn)': {
+        'name': 'ferrite (NiZn)', 'eps_r': 13.0, 'loss': 0.12,
+        'desc': 'Nickel-zinc ferrite — EMI absorber, chokes, εᵣ ≈ 13',
+        'category': 'Magnetic',
+    },
+    'ferrite (MnZn)': {
+        'name': 'ferrite (MnZn)', 'eps_r': 15.0, 'loss': 0.18,
+        'desc': 'Manganese-zinc ferrite — power cores, εᵣ ≈ 15, higher loss',
+        'category': 'Magnetic',
+    },
+    'radar absorber (RAM)': {
+        'name': 'radar absorber (RAM)', 'eps_r': 3.0, 'loss': 0.6,
+        'desc': 'Carbon-loaded foam absorber — anechoic chamber linings',
+        'category': 'Magnetic',
+    },
+
+    # ---- Liquids & biological ---
+    'DMSO': {
+        'name': 'DMSO', 'eps_r': 47.0, 'loss': 0.1,
+        'desc': 'Dimethyl sulfoxide — high-ε solvent, εᵣ ≈ 47, microwave research',
+        'category': 'Liquid',
+    },
+    'DI water': {
+        'name': 'DI water', 'eps_r': 80.0, 'loss': 0.05,
+        'desc': 'Deionized water — εᵣ ≈ 80 at low freq, σ ≈ 5.5 µS/m',
+        'category': 'Liquid',
+    },
+    'saline (0.9%)': {
+        'name': 'saline (0.9%)', 'eps_r': 76.0, 'loss': 0.35,
+        'desc': 'Physiological saline — εᵣ ≈ 76, σ ≈ 1.5 S/m, bio-EM reference',
+        'category': 'Liquid',
+    },
+    'skin tissue': {
+        'name': 'skin tissue', 'eps_r': 38.0, 'loss': 0.25,
+        'desc': 'Human skin at 2.4 GHz — εᵣ ≈ 38, σ ≈ 1.46 S/m',
+        'category': 'Liquid',
+    },
+
+    # ---- Common building / shielding ---
     'concrete': {
         'name': 'concrete', 'eps_r': 6.0, 'loss': 0.08,
-        'desc': 'Building wall - partial transmission'
+        'desc': 'Reinforced concrete — indoor propagation, εᵣ ≈ 5–8',
+        'category': 'Building',
     },
-    'wood': {
-        'name': 'wood', 'eps_r': 3.0, 'loss': 0.02,
-        'desc': 'Wooden walls - significant transmission'
+    'gypsum (drywall)': {
+        'name': 'gypsum (drywall)', 'eps_r': 2.8, 'loss': 0.01,
+        'desc': 'Interior partition wall — εᵣ ≈ 2.8, low loss',
+        'category': 'Building',
     },
-    'glass': {
-        'name': 'glass', 'eps_r': 4.5, 'loss': 0.002,
-        'desc': 'Low-loss dielectric - refraction'
-    },
-    'absorber': {
-        'name': 'absorber', 'eps_r': 2.0, 'loss': 0.4,
-        'desc': 'Radar-absorbing material'
+    'plate glass': {
+        'name': 'plate glass', 'eps_r': 6.3, 'loss': 0.005,
+        'desc': 'Soda-lime window glass — εᵣ ≈ 6.3, very low loss',
+        'category': 'Building',
     },
 }
 
@@ -86,6 +198,12 @@ SLOWDOWN_PRESETS = {
     'Crawl (5.0x)':        5.0,
 }
 
+EXPORT_FORMAT_PRESETS = {
+    "Don't save (view only)": None,
+    'GIF (always works, large file)': 'gif',
+    'MP4 (needs ffmpeg, smaller file)': 'mp4',
+}
+
 
 # ============================================================
 # Setup window
@@ -97,7 +215,7 @@ class FDTDSetupUI:
         self.result = None  # populated on "Run", left None on close
         self.root = tk.Tk()
         self.root.title(title)
-        self.root.geometry('580x720')
+        self.root.geometry('640x860')
 
         # Pre-fill from defaults dict (used for the restart loop)
         d = defaults or {}
@@ -115,6 +233,8 @@ class FDTDSetupUI:
             '_duration_label', 'Default  (1.0x)'))
         self.var_slowdown   = tk.StringVar(value=d.get(
             '_slowdown_label', 'Slow (2.0x)'))
+        self.var_export     = tk.StringVar(value=d.get(
+            '_export_label', "Don't save (view only)"))
 
         self._build_widgets()
         self.root.protocol('WM_DELETE_WINDOW', self._on_close)
@@ -133,6 +253,29 @@ class FDTDSetupUI:
             self.root, text='Choose simulation parameters, then click Run.',
             foreground='#555')
         subtitle.pack(pady=(0, 10))
+
+        # ---- Preset bar -------------------------------------
+        preset_frame = ttk.LabelFrame(self.root, text='  Presets  ')
+        preset_frame.pack(fill='x', **pad)
+
+        row = ttk.Frame(preset_frame); row.pack(fill='x', padx=8, pady=6)
+        ttk.Label(row, text='Saved setup:').pack(side='left')
+        self.preset_combo = ttk.Combobox(
+            row, values=list_presets(), state='readonly', width=28)
+        self.preset_combo.pack(side='left', padx=(8, 4))
+        self.preset_combo.bind('<<ComboboxSelected>>', self._on_preset_pick)
+        ttk.Button(row, text='Load', width=6,
+                   command=self._on_load_preset
+                   ).pack(side='left', padx=2)
+        ttk.Button(row, text='Save As...', width=10,
+                   command=self._on_save_preset
+                   ).pack(side='left', padx=2)
+        ttk.Button(row, text='Delete', width=8,
+                   command=self._on_delete_preset
+                   ).pack(side='left', padx=2)
+
+        self.preset_info = ttk.Label(preset_frame, text='', foreground='#666')
+        self.preset_info.pack(anchor='w', padx=8, pady=(0, 4))
 
         # ---- Maze section -----------------------------------
         maze_frame = ttk.LabelFrame(self.root, text='  Maze  ')
@@ -168,9 +311,10 @@ class FDTDSetupUI:
         mat_combo = ttk.Combobox(
             row, textvariable=self.var_material,
             values=list(MATERIAL_PRESETS.keys()),
-            state='readonly', width=14)
+            state='readonly', width=24)
         mat_combo.pack(side='left', padx=(8, 0))
-        self.mat_desc_label = ttk.Label(phys_frame, text='', foreground='#666')
+        self.mat_desc_label = ttk.Label(phys_frame, text='', foreground='#666',
+                                        wraplength=580)
         self.mat_desc_label.pack(anchor='w', padx=8)
         mat_combo.bind('<<ComboboxSelected>>', self._update_mat_desc)
         self._update_mat_desc()
@@ -216,6 +360,17 @@ class FDTDSetupUI:
                      state='readonly', width=24
                      ).pack(side='left', padx=(8, 0))
 
+        row = ttk.Frame(time_frame); row.pack(fill='x', padx=8, pady=6)
+        ttk.Label(row, text='Export animation:').pack(side='left')
+        ttk.Combobox(row, textvariable=self.var_export,
+                     values=list(EXPORT_FORMAT_PRESETS.keys()),
+                     state='readonly', width=30
+                     ).pack(side='left', padx=(8, 0))
+        ttk.Label(time_frame,
+                  text='   Saved to ./animations/<name>_<timestamp>.<ext>',
+                  foreground='#666'
+                  ).pack(anchor='w', padx=8, pady=(0, 4))
+
         # ---- Buttons ----------------------------------------
         btn_frame = ttk.Frame(self.root)
         btn_frame.pack(side='bottom', pady=14)
@@ -232,48 +387,203 @@ class FDTDSetupUI:
         if m:
             loss_str = ('infinite (PEC)' if m['loss'] is None
                         else f"{m['loss']:.3f}")
+            cat = m.get('category', '')
             self.mat_desc_label.config(
-                text=f"  -> eps_r={m['eps_r']:.2f}, loss={loss_str}: "
+                text=f"  [{cat}] εᵣ={m['eps_r']:.1f}, loss={loss_str}: "
                      f"{m['desc']}")
 
     # --------------------------------------------------------
-    def _on_run(self):
-        """Validate inputs and pack them into self.result, then close."""
+    # Preset handling
+    # --------------------------------------------------------
+    def _on_preset_pick(self, _event=None):
+        """Show metadata for the selected preset (without loading it yet)."""
+        name = self.preset_combo.get()
+        if not name:
+            self.preset_info.config(text='')
+            return
+        saved_at, summary = preset_metadata(name)
+        if saved_at:
+            self.preset_info.config(
+                text=f"   {summary}    (saved {saved_at})")
+        else:
+            self.preset_info.config(text='   (could not read preset)')
+
+    def _on_load_preset(self):
+        """Load the selected preset into all UI fields."""
+        name = self.preset_combo.get()
+        if not name:
+            messagebox.showinfo('Load preset',
+                                'Pick a preset from the dropdown first.')
+            return
+        try:
+            params = load_preset(name)
+        except (KeyError, ValueError) as e:
+            messagebox.showerror('Load failed', str(e))
+            return
+        self._apply_params(params)
+        self.preset_info.config(text=f"   Loaded preset {name!r}")
+
+    def _on_save_preset(self):
+        """Save the current UI state as a new preset."""
+        # Use whatever's currently selected in the dropdown as the default name
+        default = self.preset_combo.get() or ''
+        name = simpledialog.askstring(
+            'Save preset',
+            'Name for this preset:\n'
+            '(letters, digits, spaces, hyphens, underscores, parentheses)',
+            initialvalue=default, parent=self.root)
+        if name is None:
+            return  # cancelled
+        name = name.strip()
+        if not name:
+            messagebox.showerror('Save failed', 'Name cannot be empty.')
+            return
+
+        # Confirm overwrite
+        if preset_exists(name):
+            if not messagebox.askyesno(
+                    'Overwrite?',
+                    f"A preset called {name!r} already exists. Overwrite?"):
+                return
+
+        # Build a params dict from current UI state without closing the window
+        try:
+            params = self._collect_params()
+        except ValueError as e:
+            messagebox.showerror('Cannot save', str(e))
+            return
+
+        try:
+            save_preset(name, params)
+        except (ValueError, OSError) as e:
+            messagebox.showerror('Save failed', str(e))
+            return
+
+        # Refresh dropdown and select the just-saved entry
+        self.preset_combo['values'] = list_presets()
+        self.preset_combo.set(name)
+        self._on_preset_pick()
+        messagebox.showinfo('Saved',
+                            f"Preset {name!r} saved to ./presets/{name}.json")
+
+    def _on_delete_preset(self):
+        """Delete the selected preset after confirmation."""
+        name = self.preset_combo.get()
+        if not name:
+            messagebox.showinfo('Delete preset',
+                                'Pick a preset from the dropdown first.')
+            return
+        if not messagebox.askyesno(
+                'Confirm delete',
+                f"Delete preset {name!r}?\nThis cannot be undone."):
+            return
+        if delete_preset(name):
+            self.preset_combo['values'] = list_presets()
+            self.preset_combo.set('')
+            self.preset_info.config(text=f"   Deleted preset {name!r}")
+        else:
+            messagebox.showerror('Delete failed',
+                                 f"Could not find preset {name!r}.")
+
+    def _collect_params(self):
+        """
+        Read the current UI state and produce a params dict, without
+        closing the window.  Raises ValueError if any field is invalid.
+        Used by both the Save Preset button and (indirectly) by _on_run.
+        """
         try:
             size = int(self.var_size.get())
         except (tk.TclError, ValueError):
-            messagebox.showerror('Invalid input',
-                                 'Maze size must be an integer.')
-            return
+            raise ValueError('Maze size must be an integer.')
         if size < 3:
-            messagebox.showerror('Invalid input', 'Maze size must be >= 3.')
-            return
-        if size > 30:
-            if not messagebox.askyesno(
-                    'Large maze',
-                    f'Size {size} may be slow.  Continue?'):
-                return
+            raise ValueError('Maze size must be >= 3.')
 
         braid_label = self.var_braid.get()
         duration_label = self.var_duration.get()
         slowdown_label = self.var_slowdown.get()
         material_key = self.var_material.get()
+        export_label = self.var_export.get()
 
-        self.result = {
-            'size':           size,
-            'braid':          BRAID_PRESETS[braid_label],
-            'show_bfs':       bool(self.var_show_bfs.get()),
-            'material':       MATERIAL_PRESETS[material_key],
-            'source_mode':    self.var_source.get(),
-            'use_em_solver':  bool(self.var_use_em.get()),
-            'duration_mult':  DURATION_PRESETS[duration_label],
-            'slowdown':       SLOWDOWN_PRESETS[slowdown_label],
-            # Internal labels so the restart dialog can pre-select correctly
+        return {
+            'size':            size,
+            'braid':           BRAID_PRESETS[braid_label],
+            'show_bfs':        bool(self.var_show_bfs.get()),
+            'material':        MATERIAL_PRESETS[material_key],
+            'source_mode':     self.var_source.get(),
+            'use_em_solver':   bool(self.var_use_em.get()),
+            'duration_mult':   DURATION_PRESETS[duration_label],
+            'slowdown':        SLOWDOWN_PRESETS[slowdown_label],
+            'export_format':   EXPORT_FORMAT_PRESETS[export_label],
             '_braid_label':    braid_label,
             '_material_key':   material_key,
             '_duration_label': duration_label,
             '_slowdown_label': slowdown_label,
+            '_export_label':   export_label,
         }
+
+    def _apply_params(self, params):
+        """Update every UI widget to reflect the values in `params`."""
+        self.var_size.set(int(params.get('size', 8)))
+        self.var_show_bfs.set(bool(params.get('show_bfs', True)))
+        self.var_source.set(params.get('source_mode', 'burst'))
+        self.var_use_em.set(bool(params.get('use_em_solver', True)))
+
+        # Dropdowns: prefer the saved label; fall back to value lookup
+        braid_label = params.get('_braid_label')
+        if not braid_label:
+            braid_label = self._closest_label(BRAID_PRESETS,
+                                              params.get('braid', 0.0))
+        self.var_braid.set(braid_label)
+
+        material_key = params.get('_material_key')
+        if not material_key or material_key not in MATERIAL_PRESETS:
+            material_key = params.get('material', {}).get('name', 'pec')
+        self.var_material.set(material_key)
+        self._update_mat_desc()
+
+        duration_label = params.get('_duration_label')
+        if not duration_label:
+            duration_label = self._closest_label(DURATION_PRESETS,
+                                                 params.get('duration_mult', 1.0))
+        self.var_duration.set(duration_label)
+
+        slowdown_label = params.get('_slowdown_label')
+        if not slowdown_label:
+            slowdown_label = self._closest_label(SLOWDOWN_PRESETS,
+                                                 params.get('slowdown', 2.0))
+        self.var_slowdown.set(slowdown_label)
+
+        export_label = params.get('_export_label')
+        if not export_label:
+            # Reverse-lookup by export_format value
+            fmt = params.get('export_format', None)
+            for label, val in EXPORT_FORMAT_PRESETS.items():
+                if val == fmt:
+                    export_label = label
+                    break
+            else:
+                export_label = "Don't save (view only)"
+        self.var_export.set(export_label)
+
+    @staticmethod
+    def _closest_label(preset_dict, target):
+        """Return the dict key whose value is numerically closest to `target`."""
+        return min(preset_dict, key=lambda k: abs(preset_dict[k] - target))
+
+    # --------------------------------------------------------
+    def _on_run(self):
+        """Validate inputs and pack them into self.result, then close."""
+        try:
+            params = self._collect_params()
+        except ValueError as e:
+            messagebox.showerror('Invalid input', str(e))
+            return
+        if params['size'] > 30:
+            if not messagebox.askyesno(
+                    'Large maze',
+                    f"Size {params['size']} may be slow.  Continue?"):
+                return
+        self.result = params
         self.root.destroy()
 
     def _on_close(self):
