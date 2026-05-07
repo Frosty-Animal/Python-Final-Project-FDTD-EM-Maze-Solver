@@ -41,7 +41,8 @@ from fdtd_setup_ui import get_setup, show_restart_dialog
 # ============================================================
 def visualize(snapshots, times, pec_mask, src_pix, goal_pix,
               solution_path=None, em_path=None, meta=None,
-              slowdown=2.0, material=None, source_mode='burst'):
+              slowdown=2.0, material=None, source_mode='burst',
+              export_format=None, export_basename='fdtd_animation'):
     """
     Animate the FDTD result.
 
@@ -57,6 +58,10 @@ def visualize(snapshots, times, pec_mask, src_pix, goal_pix,
                2.0 = 50% slower playback at 60 ms/frame)
     material : optional dict, used only for the figure title
     source_mode : 'burst' or 'continuous', used only for the title
+    export_format : None, 'gif', or 'mp4'.  If set, the animation is
+        saved to ./animations/<export_basename>_<timestamp>.<ext> before
+        being displayed interactively.
+    export_basename : string prefix for the saved filename
     """
     Nx, Ny = pec_mask.shape
 
@@ -116,8 +121,75 @@ def visualize(snapshots, times, pec_mask, src_pix, goal_pix,
     ani = FuncAnimation(fig, update, frames=len(snapshots),
                         interval=interval_ms, blit=False, repeat=True)
     plt.tight_layout()
+
+    # Save to disk BEFORE showing interactively (plt.show blocks until close)
+    if export_format in ('gif', 'mp4'):
+        saved_path = _save_animation(ani, export_format, export_basename,
+                                     interval_ms, n_frames=len(snapshots))
+        if saved_path:
+            print(f"  Animation saved to: {saved_path}")
+
     plt.show()
     return ani
+
+
+def _save_animation(ani, fmt, basename, interval_ms, n_frames):
+    """
+    Render the FuncAnimation to disk as a GIF or MP4 file.
+
+    Parameters
+    ----------
+    ani : matplotlib.animation.FuncAnimation
+    fmt : 'gif' or 'mp4'
+    basename : filename prefix (no extension)
+    interval_ms : playback interval in ms, used to set the output FPS
+    n_frames : used for a rough progress estimate message
+
+    Returns
+    -------
+    pathlib.Path of the saved file, or None if saving failed.
+    """
+    import os
+    from datetime import datetime
+    from pathlib import Path
+    from matplotlib.animation import PillowWriter, FFMpegWriter, writers
+
+    out_dir = Path('animations')
+    out_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    out_path = out_dir / f"{basename}_{timestamp}.{fmt}"
+
+    fps = max(1, int(round(1000.0 / max(1, interval_ms))))
+
+    print(f"\nSaving animation ({fmt.upper()}, {n_frames} frames at {fps} fps).")
+    print("  This may take a moment...")
+
+    try:
+        if fmt == 'gif':
+            writer = PillowWriter(fps=fps)
+        elif fmt == 'mp4':
+            if 'ffmpeg' not in writers.list():
+                print("  ERROR: MP4 export needs ffmpeg, but it was not")
+                print("         found on your system.  Install ffmpeg from")
+                print("         https://ffmpeg.org/download.html and put it")
+                print("         on your PATH, or choose GIF instead.")
+                return None
+            writer = FFMpegWriter(fps=fps, bitrate=2400)
+        else:
+            print(f"  Unknown format: {fmt!r}")
+            return None
+
+        ani.save(str(out_path), writer=writer, dpi=110)
+        return out_path
+
+    except Exception as e:
+        print(f"  ERROR saving animation: {type(e).__name__}: {e}")
+        if out_path.exists():
+            try:
+                os.remove(out_path)
+            except OSError:
+                pass
+        return None
 
 
 def plot_arrival_field(T_arrival, pec_mask, src_pix, goal_pix,
@@ -292,12 +364,23 @@ def run_one_simulation(params):
 
     # ---- Animate ----
     slowdown = params['slowdown']
+    export_format = params.get('export_format')
     print(f"\nLaunching animation (close the window to exit).")
     print(f"Playback slowdown: {slowdown:.1f}x  "
           f"({1.0 / slowdown:.0%} of baseline rate).")
+    if export_format:
+        print(f"Export format: {export_format.upper()}")
+
+    # Build a descriptive filename prefix from the current parameters
+    export_basename = (
+        f"maze_s{params['size']}_b{int(params['braid']*100):02d}"
+        f"_{params['material']['name']}_{params['source_mode']}"
+    )
+
     visualize(snapshots, times, pec_mask, src_pix, goal_pix,
               solution_path=solution_path, em_path=em_path, meta=meta,
-              slowdown=slowdown, material=material, source_mode=source_mode)
+              slowdown=slowdown, material=material, source_mode=source_mode,
+              export_format=export_format, export_basename=export_basename)
 
     # ---- Static isochrone map ----
     if use_em_solver and T_arrival is not None:
